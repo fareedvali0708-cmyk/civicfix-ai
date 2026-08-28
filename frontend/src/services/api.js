@@ -6,8 +6,20 @@ import supabase from '../lib/supabase.js';
  * In development, Vite's proxy forwards /api/* to http://localhost:3001.
  * In production, set VITE_API_BASE_URL to the deployed backend URL.
  */
+function getApiBaseUrl() {
+  const raw =
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_URL ||
+    '/api';
+  const clean = String(raw).trim().replace(/\/+$/, '');
+  if (clean.startsWith('http') && !clean.endsWith('/api')) {
+    return `${clean}/api`;
+  }
+  return clean;
+}
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: getApiBaseUrl(),
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
