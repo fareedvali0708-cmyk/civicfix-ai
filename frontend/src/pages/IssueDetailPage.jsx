@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -71,7 +71,7 @@ function formatCoord(val, decimals = 6) {
 /**
  * A single detail row inside the issue info card.
  */
-function DetailRow({ icon: Icon, label, value, pending = false, mono = false }) {
+function DetailRow({ icon: Icon, label, value, pending = false, mono = false, analyzing = false }) {
   return (
     <div className="flex items-start gap-3 py-3 border-b border-[hsl(220_20%_18%)] last:border-0">
       <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 bg-[hsl(220_20%_18%)]">
@@ -79,7 +79,12 @@ function DetailRow({ icon: Icon, label, value, pending = false, mono = false }) 
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[11px] text-slate-500 font-medium uppercase tracking-wider mb-0.5">{label}</p>
-        {pending ? (
+        {analyzing ? (
+          <span className="inline-flex items-center gap-1.5 text-xs text-blue-400">
+            <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-ping opacity-75" />
+            Analyzing…
+          </span>
+        ) : pending ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 italic">
             <Clock size={11} className="text-slate-600" />
             Pending
@@ -298,6 +303,30 @@ export default function IssueDetailPage() {
   const [forbidden, setForbidden] = useState(false);
   const [fetchError, setFetchError] = useState(null);
 
+  // Polling state: true while waiting for agent-written fields to appear
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const pollIntervalRef = useRef(null);
+  const pollAttemptsRef = useRef(0);
+  const MAX_POLL_ATTEMPTS = 12; // 12 × 5 s = 60 s
+
+  // ── Helpers ──────────────────────────────────────────────────
+
+  /** True when the issue row is missing agent-written analysis fields */
+  function needsAnalysisData(issueRow) {
+    return !issueRow?.category && !issueRow?.severity;
+  }
+
+  function stopPolling() {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    pollAttemptsRef.current = 0;
+    setIsAnalyzing(false);
+  }
+
+  // ── Initial load ─────────────────────────────────────────────
+
   useEffect(() => {
     if (!user?.id || !issueId) return;
 
@@ -305,6 +334,7 @@ export default function IssueDetailPage() {
 
     async function load() {
       setLoading(true);
+      stopPolling();
 
       // Fetch issue and timeline in parallel
       const [issueResult, updatesResult] = await Promise.all([
@@ -321,14 +351,23 @@ export default function IssueDetailPage() {
       } else if (issueResult.error) {
         setFetchError(issueResult.error);
       } else {
-        setIssue(issueResult.data);
+        const fetchedIssue = issueResult.data;
+        setIssue(fetchedIssue);
         setUpdates(updatesResult.data);
 
         // Resolve a signed URL for the private storage bucket.
         // Ownership is already verified by fetchIssueById above.
-        if (issueResult.data?.image_url) {
-          const signed = await getSignedImageUrl(issueResult.data.image_url);
+        if (fetchedIssue?.image_url) {
+          const signed = await getSignedImageUrl(fetchedIssue.image_url);
           if (!cancelled) setSignedImageUrl(signed);
+        }
+
+        // If analysis fields are still null the agent pipeline hasn't
+        // written back yet — start polling so the page updates itself
+        // automatically once Gemini finishes.
+        if (needsAnalysisData(fetchedIssue)) {
+          setIsAnalyzing(true);
+          pollAttemptsRef.current = 0;
         }
       }
 
@@ -338,6 +377,42 @@ export default function IssueDetailPage() {
     load();
     return () => { cancelled = true; };
   }, [issueId, user?.id]);
+
+  // ── Polling effect: re-fetch until agent fields arrive ────────
+
+  useEffect(() => {
+    if (!isAnalyzing || !user?.id || !issueId) return;
+
+    pollIntervalRef.current = setInterval(async () => {
+      pollAttemptsRef.current += 1;
+
+      const [issueResult, updatesResult] = await Promise.all([
+        fetchIssueById(issueId, user.id),
+        fetchIssueUpdates(issueId),
+      ]);
+
+      if (issueResult.data) {
+        setIssue(issueResult.data);
+        setUpdates(updatesResult.data || []);
+      }
+
+      // Stop polling when analysis data has arrived OR max attempts reached
+      const analysisArrived = !needsAnalysisData(issueResult.data);
+      const tooManyAttempts = pollAttemptsRef.current >= MAX_POLL_ATTEMPTS;
+
+      if (analysisArrived || tooManyAttempts) {
+        stopPolling();
+      }
+    }, 5000);
+
+    return () => stopPolling();
+  }, [isAnalyzing, issueId, user?.id]);
+
+  // ── Cleanup on unmount ────────────────────────────────────────
+
+  useEffect(() => {
+    return () => stopPolling();
+  }, []);
 
   /* Derived display values */
   const publicId = issue?.public_issue_id || issue?.public_id || null;
@@ -505,6 +580,33 @@ export default function IssueDetailPage() {
                 </motion.div>
               )}
 
+              {/* ── Live AI analysis banner (shown while agents are still processing) ── */}
+              {isAnalyzing && (
+                <motion.div
+                  variants={sectionVariants}
+                  className="flex items-center gap-3 p-4 rounded-2xl border border-blue-500/25 bg-blue-950/20 backdrop-blur-md"
+                >
+                  <div className="shrink-0 w-8 h-8 rounded-xl flex items-center justify-center bg-blue-500/15 border border-blue-500/25">
+                    <Cpu size={14} className="text-blue-400 animate-pulse" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-blue-300">AI Pipeline Running</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Gemini Vision is classifying your report. Category, severity, and department will appear automatically.
+                    </p>
+                  </div>
+                  <div className="shrink-0 flex gap-0.5">
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className="w-1.5 h-1.5 rounded-full bg-blue-400"
+                        style={{ animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
               {/* ── AI Analysis Highlight (if available) ── */}
               {issue.ai_summary && (
                 <motion.div
@@ -554,12 +656,14 @@ export default function IssueDetailPage() {
                       label="Category"
                       value={issue.category ? <span className="capitalize">{issue.category.replace(/_/g, ' ')}</span> : null}
                       pending={!issue.category}
+                      analyzing={isAnalyzing && !issue.category}
                     />
                     <DetailRow
                       icon={Gauge}
                       label="Severity"
                       value={issue.severity ? <span className="uppercase font-semibold text-xs tracking-wider">{issue.severity}</span> : null}
                       pending={!issue.severity}
+                      analyzing={isAnalyzing && !issue.severity}
                     />
                     <DetailRow
                       icon={Gauge}
@@ -570,6 +674,7 @@ export default function IssueDetailPage() {
                           : null
                       }
                       pending={!priorityVal}
+                      analyzing={isAnalyzing && !priorityVal}
                     />
                     <DetailRow
                       icon={CheckCircle2}
