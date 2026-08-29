@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -17,6 +17,9 @@ import {
   Gauge,
   Crosshair,
   Navigation,
+  Building2,
+  UserCheck,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth.js';
 import DashboardNavbar from '../components/dashboard/DashboardNavbar.jsx';
@@ -66,6 +69,31 @@ function formatCoord(val, decimals = 6) {
   return Number(val).toFixed(decimals);
 }
 
+// Fallback message extractors in case metadata is formatted inside timeline text
+function extractCategoryFromMessage(msg) {
+  if (!msg || typeof msg !== 'string') return null;
+  const match = msg.match(/classified this report as ([a-zA-Z0-9_\s]+?)\s+with/i);
+  return match ? match[1].trim().replace(/\s+/g, '_') : null;
+}
+
+function extractSeverityFromMessage(msg) {
+  if (!msg || typeof msg !== 'string') return null;
+  const match = msg.match(/with\s+(low|medium|high|critical)\s+severity/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function extractDepartmentFromMessage(msg) {
+  if (!msg || typeof msg !== 'string') return null;
+  const match = msg.match(/routed this issue to ([\w\s&]+?)(?:\s+and assigned|\s+for departmental|\.|$)/i);
+  return match ? match[1].trim() : null;
+}
+
+function extractOfficerFromMessage(msg) {
+  if (!msg || typeof msg !== 'string') return null;
+  const match = msg.match(/assigned Officer ([\w\s.\-]+?)(?:\.|\s+Status|$)/i);
+  return match ? match[1].trim() : null;
+}
+
 /* ─── Sub-components ─────────────────────────────────────────── */
 
 /**
@@ -80,7 +108,7 @@ function DetailRow({ icon: Icon, label, value, pending = false, mono = false, an
       <div className="flex-1 min-w-0">
         <p className="text-[11px] text-slate-500 font-medium uppercase tracking-wider mb-0.5">{label}</p>
         {analyzing ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-blue-400">
+          <span className="inline-flex items-center gap-1.5 text-xs text-blue-400 font-medium">
             <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-ping opacity-75" />
             Analyzing…
           </span>
@@ -90,9 +118,9 @@ function DetailRow({ icon: Icon, label, value, pending = false, mono = false, an
             Pending
           </span>
         ) : value ? (
-          <p className={`text-sm text-slate-200 break-words ${mono ? 'font-mono text-xs' : ''}`}>
+          <div className={`text-sm text-slate-200 break-words ${mono ? 'font-mono text-xs' : ''}`}>
             {value}
-          </p>
+          </div>
         ) : (
           <span className="text-xs text-slate-600 italic">—</span>
         )}
@@ -133,7 +161,7 @@ function PageSkeleton() {
 /**
  * Full-page error state (not found / forbidden / network error).
  */
-function ErrorState({ title, message, icon: Icon = AlertTriangle }) {
+function ErrorState({ title, message, icon: Icon = AlertTriangle, onRetry = null }) {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.97 }}
@@ -157,19 +185,34 @@ function ErrorState({ title, message, icon: Icon = AlertTriangle }) {
         </h2>
         <p className="text-sm text-slate-400 leading-relaxed">{message}</p>
       </div>
-      <Link
-        to="/dashboard"
-        className="
-          inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold
-          text-white transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400
-        "
-        style={{
-          background: 'linear-gradient(135deg, hsl(220 90% 56%) 0%, hsl(224 85% 46%) 100%)',
-        }}
-      >
-        <LayoutDashboard size={15} />
-        Back to Dashboard
-      </Link>
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="
+              inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold
+              text-white transition-colors duration-150 bg-[hsl(220_20%_18%)] hover:bg-[hsl(220_20%_24%)]
+            "
+          >
+            <RefreshCw size={14} />
+            Try Again
+          </button>
+        )}
+        <Link
+          to="/dashboard"
+          className="
+            inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold
+            text-white transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-400
+          "
+          style={{
+            background: 'linear-gradient(135deg, hsl(220 90% 56%) 0%, hsl(224 85% 46%) 100%)',
+          }}
+        >
+          <LayoutDashboard size={15} />
+          Back to Dashboard
+        </Link>
+      </div>
     </motion.div>
   );
 }
@@ -262,7 +305,7 @@ function TimelineEvent({ update, index, totalEvents }) {
             {formatDateTime(update.created_at)}
           </span>
           {isLatest && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/25">
               <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
               Latest Action
             </span>
@@ -274,18 +317,46 @@ function TimelineEvent({ update, index, totalEvents }) {
   );
 }
 
+/**
+ * Check if the issue analysis has finished based on real database state.
+ */
+function checkAnalysisCompleted(issueData, updatesData = []) {
+  if (!issueData) return false;
+
+  // 1. Direct fields stored in public.issues
+  if (issueData.category || issueData.severity || issueData.ai_summary || issueData.priority_level) {
+    return true;
+  }
+
+  // 2. Status advanced beyond initial intake
+  if (issueData.status && issueData.status !== 'reported') {
+    return true;
+  }
+
+  // 3. Real timeline events from Analysis Agent or downstream agents
+  if (Array.isArray(updatesData) && updatesData.length > 0) {
+    const hasDownstreamEvent = updatesData.some((u) => {
+      const name = String(u.agent_name || u.author || '').toLowerCase();
+      return (
+        name.includes('analysis') ||
+        name.includes('assignment') ||
+        name.includes('monitoring') ||
+        name.includes('escalation') ||
+        name.includes('closure')
+      );
+    });
+    if (hasDownstreamEvent) return true;
+  }
+
+  return false;
+}
+
 /* ─── Main Page ──────────────────────────────────────────────── */
 
 /**
  * IssueDetailPage
  *
  * Route: /issues/:id (protected)
- *
- * Shows the citizen their own issue with:
- * - full issue details
- * - real photo
- * - agent-determined fields (with "Pending Analysis" where not yet set)
- * - live timeline from public.issue_updates
  */
 export default function IssueDetailPage() {
   const { id: issueId } = useParams();
@@ -303,127 +374,189 @@ export default function IssueDetailPage() {
   const [forbidden, setForbidden] = useState(false);
   const [fetchError, setFetchError] = useState(null);
 
-  // Polling state: true while waiting for agent-written fields to appear
+  // Polling state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const pollIntervalRef = useRef(null);
-  const pollAttemptsRef = useRef(0);
-  const MAX_POLL_ATTEMPTS = 12; // 12 × 5 s = 60 s
+  const [pollTimeout, setPollTimeout] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const pollTimerRef = useRef(null);
+  const pollCountRef = useRef(0);
+  const MAX_POLL_ATTEMPTS = 10; // 10 × 2.5s = 25 seconds
 
-  // ── Helpers ──────────────────────────────────────────────────
-
-  /** True when the issue row is missing agent-written analysis fields */
-  function needsAnalysisData(issueRow) {
-    return !issueRow?.category && !issueRow?.severity;
-  }
-
-  function stopPolling() {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
-    pollAttemptsRef.current = 0;
+    pollCountRef.current = 0;
     setIsAnalyzing(false);
-  }
+  }, []);
 
-  // ── Initial load ─────────────────────────────────────────────
-
-  useEffect(() => {
+  const loadData = useCallback(async (isManualRefresh = false) => {
     if (!user?.id || !issueId) return;
 
-    let cancelled = false;
+    if (isManualRefresh) setRefreshing(true);
 
-    async function load() {
-      setLoading(true);
-      stopPolling();
-
-      // Fetch issue and timeline in parallel
+    try {
       const [issueResult, updatesResult] = await Promise.all([
         fetchIssueById(issueId, user.id),
         fetchIssueUpdates(issueId),
       ]);
-
-      if (cancelled) return;
 
       if (issueResult.notFound) {
         setNotFound(true);
+        stopPolling();
       } else if (issueResult.forbidden) {
         setForbidden(true);
+        stopPolling();
       } else if (issueResult.error) {
         setFetchError(issueResult.error);
+        stopPolling();
       } else {
         const fetchedIssue = issueResult.data;
-        setIssue(fetchedIssue);
-        setUpdates(updatesResult.data);
+        const fetchedUpdates = updatesResult.data || [];
 
-        // Resolve a signed URL for the private storage bucket.
-        // Ownership is already verified by fetchIssueById above.
-        if (fetchedIssue?.image_url) {
-          const signed = await getSignedImageUrl(fetchedIssue.image_url);
-          if (!cancelled) setSignedImageUrl(signed);
+        setIssue(fetchedIssue);
+        setUpdates(fetchedUpdates);
+
+        if (fetchedIssue?.image_url && !signedImageUrl) {
+          getSignedImageUrl(fetchedIssue.image_url).then((signed) => {
+            if (signed) setSignedImageUrl(signed);
+          });
         }
 
-        // If analysis fields are still null the agent pipeline hasn't
-        // written back yet — start polling so the page updates itself
-        // automatically once Gemini finishes.
-        if (needsAnalysisData(fetchedIssue)) {
+        const isComplete = checkAnalysisCompleted(fetchedIssue, fetchedUpdates);
+        if (isComplete) {
+          stopPolling();
+          setPollTimeout(false);
+        } else if (!isManualRefresh && pollCountRef.current === 0) {
           setIsAnalyzing(true);
-          pollAttemptsRef.current = 0;
+          setPollTimeout(false);
         }
       }
-
+    } catch (err) {
+      console.error('[IssueDetailPage] loadData error:', err);
+    } finally {
       setLoading(false);
+      if (isManualRefresh) setRefreshing(false);
     }
+  }, [issueId, user?.id, signedImageUrl, stopPolling]);
 
-    load();
-    return () => { cancelled = true; };
-  }, [issueId, user?.id]);
+  // Initial load
+  useEffect(() => {
+    loadData();
+    return () => stopPolling();
+  }, [loadData, stopPolling]);
 
-  // ── Polling effect: re-fetch until agent fields arrive ────────
-
+  // Polling effect: refetch every 2.5s while processing
   useEffect(() => {
     if (!isAnalyzing || !user?.id || !issueId) return;
 
-    pollIntervalRef.current = setInterval(async () => {
-      pollAttemptsRef.current += 1;
+    pollTimerRef.current = setInterval(async () => {
+      pollCountRef.current += 1;
 
-      const [issueResult, updatesResult] = await Promise.all([
-        fetchIssueById(issueId, user.id),
-        fetchIssueUpdates(issueId),
-      ]);
+      try {
+        const [issueResult, updatesResult] = await Promise.all([
+          fetchIssueById(issueId, user.id),
+          fetchIssueUpdates(issueId),
+        ]);
 
-      if (issueResult.data) {
-        setIssue(issueResult.data);
-        setUpdates(updatesResult.data || []);
+        if (issueResult.data) {
+          const freshIssue = issueResult.data;
+          const freshUpdates = updatesResult.data || [];
+
+          setIssue(freshIssue);
+          setUpdates(freshUpdates);
+
+          const isComplete = checkAnalysisCompleted(freshIssue, freshUpdates);
+          if (isComplete) {
+            stopPolling();
+            setPollTimeout(false);
+            return;
+          }
+        }
+
+        if (pollCountRef.current >= MAX_POLL_ATTEMPTS) {
+          stopPolling();
+          setPollTimeout(true);
+        }
+      } catch (err) {
+        console.warn('[IssueDetailPage] Polling interval error:', err);
       }
+    }, 2500);
 
-      // Stop polling when analysis data has arrived OR max attempts reached
-      const analysisArrived = !needsAnalysisData(issueResult.data);
-      const tooManyAttempts = pollAttemptsRef.current >= MAX_POLL_ATTEMPTS;
-
-      if (analysisArrived || tooManyAttempts) {
-        stopPolling();
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
       }
-    }, 5000);
+    };
+  }, [isAnalyzing, issueId, user?.id, stopPolling]);
 
-    return () => stopPolling();
-  }, [isAnalyzing, issueId, user?.id]);
-
-  // ── Cleanup on unmount ────────────────────────────────────────
-
-  useEffect(() => {
-    return () => stopPolling();
-  }, []);
-
-  /* Derived display values */
+  /* ── Derived display values ── */
   const publicId = issue?.public_issue_id || issue?.public_id || null;
   const displayRef = publicId || (issue?.id ? `#${issue.id.slice(0, 8).toUpperCase()}` : '—');
-  const priorityVal = issue?.priority_level || issue?.priority || issue?.severity;
+
+  // Timeline-aware agent extractions
+  const analysisUpdate = updates.find(
+    (u) => u.agent_name && u.agent_name.toLowerCase().includes('analysis')
+  );
+  const assignmentUpdate = updates.find(
+    (u) => u.agent_name && u.agent_name.toLowerCase().includes('assignment')
+  );
+
+  const hasAnalysisCompleted = checkAnalysisCompleted(issue, updates);
+
+  const categoryVal =
+    issue?.category ||
+    analysisUpdate?.metadata?.category ||
+    extractCategoryFromMessage(analysisUpdate?.message) ||
+    null;
+
+  const severityVal =
+    issue?.severity ||
+    analysisUpdate?.metadata?.severity ||
+    extractSeverityFromMessage(analysisUpdate?.message) ||
+    null;
+
+  const priorityVal =
+    issue?.priority_level ||
+    issue?.priority ||
+    analysisUpdate?.metadata?.priority_level ||
+    severityVal ||
+    null;
+
   const priority = priorityVal ? getPriorityConfig(String(priorityVal).toLowerCase()) : null;
+
+  const aiSummaryVal =
+    issue?.ai_summary ||
+    analysisUpdate?.metadata?.concise_reasoning ||
+    null;
+
+  const aiConfidenceVal =
+    issue?.ai_confidence !== undefined && issue?.ai_confidence !== null
+      ? issue.ai_confidence
+      : (analysisUpdate?.metadata?.confidence ?? null);
+
+  const departmentNameVal =
+    assignmentUpdate?.metadata?.department_name ||
+    issue?.department_name ||
+    (issue?.departments && issue.departments.name) ||
+    analysisUpdate?.metadata?.recommended_department ||
+    extractDepartmentFromMessage(assignmentUpdate?.message) ||
+    null;
+
+  const officerNameVal =
+    assignmentUpdate?.metadata?.officer_name ||
+    issue?.officer_name ||
+    (issue?.officers && issue.officers.officer_name) ||
+    extractOfficerFromMessage(assignmentUpdate?.message) ||
+    null;
+
   const lat = formatCoord(issue?.latitude);
   const lng = formatCoord(issue?.longitude);
   const accuracy = issue?.location_accuracy ? `±${Math.round(issue.location_accuracy)} m` : null;
 
-  /* ─── Render ─── */
+  /* ── Render ── */
   return (
     <div
       className="min-h-screen relative overflow-x-hidden"
@@ -489,6 +622,7 @@ export default function IssueDetailPage() {
               <ErrorState
                 title="Failed to Load Report"
                 message={fetchError}
+                onRetry={() => loadData(true)}
               />
             </motion.div>
           )}
@@ -522,9 +656,7 @@ export default function IssueDetailPage() {
                       style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}
                     >
                       {publicId ? (
-                        <>
-                          <span className="text-blue-400">{publicId}</span>
-                        </>
+                        <span className="text-blue-400">{publicId}</span>
                       ) : (
                         displayRef
                       )}
@@ -534,7 +666,17 @@ export default function IssueDetailPage() {
                     </p>
                   </div>
 
-                  <IssueStatusBadge status={issue.status} className="text-sm px-3.5 py-1.5" />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => loadData(true)}
+                      title="Refresh issue status"
+                      className="p-2 rounded-xl text-slate-400 hover:text-white bg-[hsl(220_20%_15%)] hover:bg-[hsl(220_20%_20%)] border border-[hsl(220_20%_22%)] transition-colors"
+                    >
+                      <RefreshCw size={14} className={refreshing ? 'animate-spin text-blue-400' : ''} />
+                    </button>
+                    <IssueStatusBadge status={issue.status} className="text-sm px-3.5 py-1.5" />
+                  </div>
                 </div>
               </motion.div>
 
@@ -545,7 +687,6 @@ export default function IssueDetailPage() {
                   className="relative rounded-2xl overflow-hidden border border-[hsl(220_20%_20%)] bg-[hsl(220_20%_14%)]"
                   style={{ minHeight: 240 }}
                 >
-                  {/* Blur placeholder while loading */}
                   {!imgLoaded && !imgError && (
                     <div
                       className="absolute inset-0 animate-pulse"
@@ -571,7 +712,6 @@ export default function IssueDetailPage() {
                     </div>
                   )}
 
-                  {/* Gradient overlay at bottom */}
                   {imgLoaded && (
                     <div className="absolute bottom-0 inset-x-0 h-16 pointer-events-none"
                       style={{ background: 'linear-gradient(to top, hsl(220 20% 14%) 0%, transparent 100%)' }}
@@ -580,8 +720,8 @@ export default function IssueDetailPage() {
                 </motion.div>
               )}
 
-              {/* ── Live AI analysis banner (shown while agents are still processing) ── */}
-              {isAnalyzing && (
+              {/* ── Active AI Pipeline Running Banner ── */}
+              {isAnalyzing && !hasAnalysisCompleted && (
                 <motion.div
                   variants={sectionVariants}
                   className="flex items-center gap-3 p-4 rounded-2xl border border-blue-500/25 bg-blue-950/20 backdrop-blur-md"
@@ -607,8 +747,36 @@ export default function IssueDetailPage() {
                 </motion.div>
               )}
 
-              {/* ── AI Analysis Highlight (if available) ── */}
-              {issue.ai_summary && (
+              {/* ── Polling Timeout Warning with Manual Retry ── */}
+              {pollTimeout && !hasAnalysisCompleted && (
+                <motion.div
+                  variants={sectionVariants}
+                  className="flex items-center justify-between gap-3 p-4 rounded-2xl border border-amber-500/30 bg-amber-950/20 backdrop-blur-md"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="shrink-0 w-8 h-8 rounded-xl flex items-center justify-center bg-amber-500/15 border border-amber-500/25 text-amber-400">
+                      <Clock size={15} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-amber-300">Analysis In Progress</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Analysis is taking longer than expected. Refresh to check the latest status.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => loadData(true)}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-amber-200 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 transition-colors"
+                  >
+                    <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+                    <span>Refresh</span>
+                  </button>
+                </motion.div>
+              )}
+
+              {/* ── Completed AI Analysis Card ── */}
+              {hasAnalysisCompleted && (aiSummaryVal || categoryVal) && (
                 <motion.div
                   variants={sectionVariants}
                   className="p-5 rounded-2xl bg-blue-950/20 border border-blue-500/30 backdrop-blur-md space-y-2 shadow-lg shadow-blue-950/30"
@@ -618,15 +786,21 @@ export default function IssueDetailPage() {
                       <Cpu size={15} className="text-blue-400" />
                       <span>Autonomous AI Vision Analysis</span>
                     </div>
-                    {issue.ai_confidence && (
+                    {aiConfidenceVal !== null && aiConfidenceVal !== undefined && (
                       <span className="text-[11px] font-bold text-blue-300 bg-blue-500/15 px-2 py-0.5 rounded-full border border-blue-500/25">
-                        {Math.round(issue.ai_confidence * 100)}% Confidence
+                        {Math.round(Number(aiConfidenceVal) <= 1 ? Number(aiConfidenceVal) * 100 : Number(aiConfidenceVal))}% Confidence
                       </span>
                     )}
                   </div>
-                  <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
-                    {issue.ai_summary}
-                  </p>
+                  {aiSummaryVal ? (
+                    <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+                      {aiSummaryVal}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Issue verified and classified as <span className="text-slate-200 font-medium capitalize">{String(categoryVal || '').replace(/_/g, ' ')}</span> with <span className="text-slate-200 font-medium uppercase">{severityVal}</span> severity.
+                    </p>
+                  )}
                 </motion.div>
               )}
 
@@ -654,16 +828,16 @@ export default function IssueDetailPage() {
                     <DetailRow
                       icon={Tag}
                       label="Category"
-                      value={issue.category ? <span className="capitalize">{issue.category.replace(/_/g, ' ')}</span> : null}
-                      pending={!issue.category}
-                      analyzing={isAnalyzing && !issue.category}
+                      value={categoryVal ? <span className="capitalize">{String(categoryVal).replace(/_/g, ' ')}</span> : null}
+                      pending={!categoryVal && !isAnalyzing}
+                      analyzing={isAnalyzing && !categoryVal}
                     />
                     <DetailRow
                       icon={Gauge}
                       label="Severity"
-                      value={issue.severity ? <span className="uppercase font-semibold text-xs tracking-wider">{issue.severity}</span> : null}
-                      pending={!issue.severity}
-                      analyzing={isAnalyzing && !issue.severity}
+                      value={severityVal ? <span className="uppercase font-semibold text-xs tracking-wider">{String(severityVal)}</span> : null}
+                      pending={!severityVal && !isAnalyzing}
+                      analyzing={isAnalyzing && !severityVal}
                     />
                     <DetailRow
                       icon={Gauge}
@@ -673,9 +847,23 @@ export default function IssueDetailPage() {
                           ? <span style={{ color: priority.color }} className="font-semibold">{priority.label}</span>
                           : null
                       }
-                      pending={!priorityVal}
+                      pending={!priorityVal && !isAnalyzing}
                       analyzing={isAnalyzing && !priorityVal}
                     />
+                    <DetailRow
+                      icon={Building2}
+                      label="Department"
+                      value={departmentNameVal ? <span>{departmentNameVal}</span> : null}
+                      pending={!departmentNameVal && !isAnalyzing}
+                      analyzing={isAnalyzing && !departmentNameVal}
+                    />
+                    {officerNameVal && (
+                      <DetailRow
+                        icon={UserCheck}
+                        label="Assigned Officer"
+                        value={<span>{officerNameVal}</span>}
+                      />
+                    )}
                     <DetailRow
                       icon={CheckCircle2}
                       label="Citizen Description"
