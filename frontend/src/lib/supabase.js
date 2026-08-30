@@ -22,13 +22,6 @@ if (!supabaseAnonKey) {
  * Row Level Security (RLS) policies apply to all requests made with this client.
  * Never import or use the service role key on the frontend.
  */
-const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storage: window.localStorage,
-  },
-});
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default supabase;

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   signInWithGoogle,
   signInWithPassword,
@@ -19,29 +19,13 @@ export function AuthProvider({ children }) {
   const [profileLoading, setProfileLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
 
-  const roleRef = useRef(null);
-  const profileRef = useRef(null);
-
-  const updateRoleState = useCallback((newRole, newProfile = null) => {
-    roleRef.current = newRole;
-    if (newProfile !== undefined) {
-      profileRef.current = newProfile;
-      setProfile(newProfile);
-    }
-    setRole(newRole);
-  }, []);
-
   // Helper to resolve user role using public.profiles as the single source of truth
-  const resolveUserRole = useCallback(async (currentUser, forceRefresh = false) => {
+  const resolveUserRole = useCallback(async (currentUser) => {
     if (!currentUser?.id) {
-      updateRoleState(null, null);
+      setProfile(null);
+      setRole(null);
       setProfileLoading(false);
       return null;
-    }
-
-    // If profile and role for this user ID are already resolved and not forcing refresh, retain them
-    if (!forceRefresh && profileRef.current?.id === currentUser.id && roleRef.current) {
-      return roleRef.current;
     }
 
     setProfileLoading(true);
@@ -49,7 +33,8 @@ export function AuthProvider({ children }) {
       // 1. Single Source of Truth: fetch public.profiles row in Supabase using Auth user UUID (user.id)
       const userProfile = await fetchUserProfile(currentUser.id);
       if (userProfile?.role) {
-        updateRoleState(userProfile.role, userProfile);
+        setProfile(userProfile);
+        setRole(userProfile.role);
         return userProfile.role;
       }
 
@@ -60,29 +45,23 @@ export function AuthProvider({ children }) {
         null;
 
       if (metaRole) {
-        updateRoleState(metaRole, userProfile || null);
+        setProfile(userProfile || null);
+        setRole(metaRole);
         return metaRole;
       }
 
-      // 3. If we previously had a valid role for this user, preserve it rather than demoting on transient failure
-      if (roleRef.current && profileRef.current?.id === currentUser.id) {
-        return roleRef.current;
-      }
-
-      // 4. Default to citizen only if no role is defined in DB or metadata
-      updateRoleState('citizen', userProfile || null);
+      // 3. Default to citizen only if no role is defined in DB or metadata
+      setProfile(userProfile || null);
+      setRole('citizen');
       return 'citizen';
     } catch (err) {
       console.warn('[AuthContext] Role resolution notice:', err.message);
-      if (roleRef.current && profileRef.current?.id === currentUser.id) {
-        return roleRef.current;
-      }
-      updateRoleState('citizen', null);
+      setRole('citizen');
       return 'citizen';
     } finally {
       setProfileLoading(false);
     }
-  }, [updateRoleState]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +76,8 @@ export function AuthProvider({ children }) {
         if (currentUser) {
           await resolveUserRole(currentUser);
         } else {
-          updateRoleState(null, null);
+          setRole(null);
+          setProfile(null);
         }
       })
       .catch((err) => {
@@ -107,30 +87,9 @@ export function AuthProvider({ children }) {
         if (!cancelled) setLoading(false);
       });
 
-    // 2. Subscribe to auth state changes (handles multi-tab session sync)
+    // 2. Subscribe to future auth state changes
     const unsubscribe = onAuthStateChange(async (event, newSession) => {
       if (cancelled) return;
-
-      if (event === 'SIGNED_OUT') {
-        setSession(null);
-        setUser(null);
-        updateRoleState(null, null);
-        setAuthError(null);
-        setProfileLoading(false);
-        return;
-      }
-
-      if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        setSession(newSession);
-        const newUser = newSession?.user ?? null;
-        setUser(newUser);
-        if (newUser && (!roleRef.current || profileRef.current?.id !== newUser.id)) {
-          await resolveUserRole(newUser);
-        }
-        return;
-      }
-
-      // INITIAL_SESSION, SIGNED_IN
       setSession(newSession);
       const newUser = newSession?.user ?? null;
       setUser(newUser);
@@ -138,7 +97,14 @@ export function AuthProvider({ children }) {
       if (newUser) {
         await resolveUserRole(newUser);
       } else {
-        updateRoleState(null, null);
+        setRole(null);
+        setProfile(null);
+      }
+
+      if (event === 'SIGNED_OUT') {
+        setAuthError(null);
+        setRole(null);
+        setProfile(null);
       }
     });
 
@@ -146,7 +112,7 @@ export function AuthProvider({ children }) {
       cancelled = true;
       unsubscribe();
     };
-  }, [resolveUserRole, updateRoleState]);
+  }, [resolveUserRole]);
 
   const handleSignInWithPassword = async (email, password) => {
     setAuthError(null);
