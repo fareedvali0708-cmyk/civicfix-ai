@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   signInWithGoogle,
+  signInWithPassword,
   signOut,
   getSession,
   onAuthStateChange,
@@ -45,8 +46,8 @@ export function AuthProvider({ children }) {
       // 3. If signed in via government portal session indicator
       const activePortal = sessionStorage.getItem('auth_portal');
       if (activePortal === 'government') {
-        setRole('government_officer');
-        return 'government_officer';
+        setRole('officer');
+        return 'officer';
       }
 
       // Default role
@@ -104,6 +105,24 @@ export function AuthProvider({ children }) {
     };
   }, [resolveUserRole]);
 
+  const handleSignInWithPassword = async (email, password) => {
+    setAuthError(null);
+    try {
+      const data = await signInWithPassword(email, password);
+      let userRole = null;
+      if (data?.user) {
+        setUser(data.user);
+        setSession(data.session);
+        userRole = await resolveUserRole(data.user);
+      }
+      return { data, role: userRole };
+    } catch (err) {
+      console.error('[AuthContext] Password sign-in failed:', err.message);
+      setAuthError(err.message || 'Sign-in failed. Please try again.');
+      throw err;
+    }
+  };
+
   const handleSignInWithGoogle = async (portal = 'citizen') => {
     setAuthError(null);
     try {
@@ -125,7 +144,11 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const isGovernmentUser = role === 'government_officer' || role === 'department_admin';
+  const isGovernmentUser =
+    role === 'officer' ||
+    role === 'admin' ||
+    role === 'government_officer' ||
+    role === 'department_admin';
 
   const value = {
     user,
@@ -135,8 +158,10 @@ export function AuthProvider({ children }) {
     loading,
     authError,
     isAuthenticated: !!user,
+    signInWithPassword: handleSignInWithPassword,
     signInWithGoogle: handleSignInWithGoogle,
     signOut: handleSignOut,
+    resolveUserRole,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

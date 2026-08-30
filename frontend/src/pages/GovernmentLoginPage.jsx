@@ -1,28 +1,64 @@
-import { useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
-import { motion } from 'motion/react';
-import { Shield, Lock, AlertCircle, ArrowRight, Activity, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
+import { Shield, Lock, Mail, AlertCircle, ArrowRight, Activity, CheckCircle2, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth.js';
 import Logo from '../components/common/Logo.jsx';
 
 export default function GovernmentLoginPage() {
-  const { isAuthenticated, isGovernmentUser, signInWithGoogle } = useAuth();
+  const { isAuthenticated, isGovernmentUser, loading: authLoading, signInWithPassword } = useAuth();
+  const navigate = useNavigate();
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
   // If already authenticated with government role, redirect directly to command center
-  if (isAuthenticated && isGovernmentUser) {
-    return <Navigate to="/government" replace />;
-  }
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && isGovernmentUser) {
+      navigate('/government', { replace: true });
+    }
+  }, [isAuthenticated, isGovernmentUser, authLoading, navigate]);
 
-  const handleGoogleLogin = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setErrorMessage('Please enter both email and password.');
+      return;
+    }
+
     setSigningIn(true);
     setErrorMessage(null);
+
     try {
-      await signInWithGoogle('government');
+      const result = await signInWithPassword(email.trim(), password);
+      const userRole = result?.role;
+
+      if (
+        userRole === 'officer' ||
+        userRole === 'admin' ||
+        userRole === 'government_officer' ||
+        userRole === 'department_admin'
+      ) {
+        navigate('/government', { replace: true });
+      } else if (userRole === 'citizen') {
+        navigate('/unauthorized', { replace: true });
+      } else {
+        // Fallback for government portal if role verified or default navigation
+        navigate('/government', { replace: true });
+      }
     } catch (err) {
-      console.error('[GovernmentLoginPage] Sign-in error:', err.message);
-      setErrorMessage(err.message || 'Failed to authenticate. Please try again.');
+      console.error('[GovernmentLoginPage] Sign-in error:', err);
+      let msg = err?.message || 'Invalid government credentials.';
+      if (
+        msg.toLowerCase().includes('invalid login credentials') ||
+        msg.toLowerCase().includes('invalid credentials')
+      ) {
+        msg = 'Invalid government credentials. Please check your email and password.';
+      }
+      setErrorMessage(msg);
       setSigningIn(false);
     }
   };
@@ -47,11 +83,20 @@ export default function GovernmentLoginPage() {
 
       {/* Header */}
       <header className="max-w-6xl w-full mx-auto flex items-center justify-between py-2">
-        <Link to="/">
-          <Logo size="md" />
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link to="/" className="flex items-center gap-2" title="CivicFix Home">
+            <Logo size="md" />
+          </Link>
+          <Link
+            to="/"
+            className="hidden sm:inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            <span>CivicFix Home</span>
+          </Link>
+        </div>
         <Link
           to="/login"
+          id="citizen-portal-link"
           className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
         >
           <span>Citizen Portal</span>
@@ -107,53 +152,104 @@ export default function GovernmentLoginPage() {
           </div>
 
           {/* Error Banner */}
-          {errorMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300"
-            >
-              <AlertCircle size={15} className="shrink-0 mt-0.5" />
-              <p>{errorMessage}</p>
-            </motion.div>
-          )}
+          <AnimatePresence mode="wait">
+            {errorMessage && (
+              <motion.div
+                key="error-message"
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                className="flex items-start gap-2.5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300"
+                role="alert"
+              >
+                <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                <p id="gov-auth-error-text">{errorMessage}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {/* Sign in with Google Button */}
-          <div className="space-y-3 pt-1">
+          {/* Email/Password Login Form */}
+          <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+            <div className="space-y-1.5 text-left">
+              <label
+                htmlFor="gov-email"
+                className="block text-xs font-semibold text-slate-300"
+              >
+                Government Email
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                  <Mail size={15} />
+                </div>
+                <input
+                  id="gov-email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="gov.demo@civicfix.demo"
+                  disabled={signingIn}
+                  className="w-full pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 bg-[hsl(222,20%,14%)] border border-[hsl(222,20%,22%)] rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors disabled:opacity-50"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5 text-left">
+              <label
+                htmlFor="gov-password"
+                className="block text-xs font-semibold text-slate-300"
+              >
+                Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                  <Lock size={15} />
+                </div>
+                <input
+                  id="gov-password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  disabled={signingIn}
+                  className="w-full pl-10 pr-10 py-2.5 text-xs text-white placeholder-slate-500 bg-[hsl(222,20%,14%)] border border-[hsl(222,20%,22%)] rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  tabIndex={-1}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+
             <button
-              onClick={handleGoogleLogin}
+              type="submit"
+              id="gov-login-submit-btn"
               disabled={signingIn}
-              className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-2xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/25 border border-indigo-400/30 cursor-pointer disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/25 border border-indigo-400/30 cursor-pointer disabled:opacity-50 mt-2"
             >
               {signingIn ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>Signing in...</span>
+                </>
               ) : (
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path
-                    fill="currentColor"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  />
-                  <path
-                    fill="currentColor"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                  />
-                </svg>
+                <span>Sign in to Government Portal</span>
               )}
-              <span>{signingIn ? 'Redirecting to OAuth…' : 'Sign in with Municipal Google Account'}</span>
             </button>
 
-            <p className="text-[11px] text-center text-slate-500">
+            <p className="text-[11px] text-center text-slate-500 pt-1">
               Only authorized staff credentials will be granted access.
             </p>
-          </div>
+          </form>
 
           {/* Switch to Citizen Login */}
           <div className="pt-2 border-t border-[hsl(222,20%,18%)] text-center">

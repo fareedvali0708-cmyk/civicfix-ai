@@ -86,7 +86,7 @@ export default function GovernmentHeader({ loading, onRefresh, lastUpdated }) {
                   {displayName}
                 </span>
                 <span className="text-[9px] uppercase tracking-wider text-indigo-300 font-mono leading-none">
-                  {role === 'department_admin' ? 'Admin' : 'Officer'}
+                  {role === 'department_admin' || role === 'admin' ? 'Admin' : 'Officer'}
                 </span>
               </div>
             </div>

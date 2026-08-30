@@ -8,6 +8,21 @@ import supabase from '../lib/supabase.js';
  */
 
 /**
+ * Initiate Email and Password sign-in using Supabase Auth.
+ *
+ * @param {string} email
+ * @param {string} password
+ */
+export async function signInWithPassword(email, password) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Initiate Google OAuth sign-in with portal designation.
  * Redirects the browser to Google; Supabase then redirects back to /auth/callback.
  *
