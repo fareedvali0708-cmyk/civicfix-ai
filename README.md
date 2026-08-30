@@ -1,108 +1,61 @@
-# Agentic CivicFix
+# CivicFix
 
-> AI-powered civic issue resolution platform — Hackathon Project
+## AI-Powered Civic Issue Resolution Platform
 
-## Overview
+CivicFix is an AI-powered civic issue reporting and resolution platform that helps citizens report local problems and helps municipal authorities manage, prioritize, and resolve those issues efficiently.
 
-Citizens report civic problems (potholes, broken streetlights, drainage blockages, water leaks, etc.) with a photo, GPS location, and optional description. An agentic AI workflow processes each complaint through a pipeline of specialized agents backed by Supabase PostgreSQL.
+## What CivicFix Does
 
-## Agent Pipeline
+### Citizen Portal
+- Report civic issues such as roads, garbage, drainage, streetlights, and other public problems.
+- Upload photographic evidence.
+- Capture GPS/location information.
+- Track submitted complaints and their status.
+- View issue details and resolution progress.
 
-```
-Citizen → Intake Agent → Analysis Agent → Assignment Agent
-       → Monitoring Agent → [Escalation Agent] → Closure Agent → Citizen Feedback
-```
+### AI-Powered Processing
+- Uses AI/Gemini Vision to analyze submitted evidence.
+- Automatically classifies civic issues.
+- Determines severity and priority.
+- Helps identify the responsible government department.
+- Supports automated issue routing and processing.
 
-## Tech Stack
+### Government Command Center
+- Dedicated government/officer portal.
+- View incoming civic complaints.
+- Monitor issue queues and priorities.
+- Track SLA status.
+- Review issue evidence and AI analysis.
+- Monitor escalations and resolution status.
 
-| Layer      | Technology                                          |
-|------------|-----------------------------------------------------|
-| Frontend   | React 19 + Vite 8 + Tailwind CSS + Motion for React |
-| Backend    | Node.js + Express                                   |
-| Database   | Supabase PostgreSQL                                 |
-| Storage    | Supabase Storage                                    |
-| AI         | Google Gemini API                                   |
-| Maps       | Google Maps / Places API + Browser Geolocation API  |
-| Auth       | Supabase Auth (Google OAuth for citizens)           |
+## Technology Stack
 
-## Project Structure
+- React
+- Vite
+- JavaScript
+- Node.js
+- Express
+- Supabase
+- Supabase Authentication
+- Supabase Storage
+- Gemini Vision AI
+- Axios
+- Vercel
+- Render
 
-```
-/
-├── frontend/          # React + Vite application
-│   └── src/
-│       ├── components/
-│       ├── pages/
-│       ├── layouts/
-│       ├── hooks/
-│       ├── services/
-│       ├── lib/
-│       └── context/
-│
-├── backend/           # Node.js + Express API
-│   └── src/
-│       ├── agents/       # One file per agent
-│       ├── services/     # Gemini, Maps, Storage, Notifications
-│       ├── routes/
-│       ├── controllers/
-│       ├── middleware/
-│       ├── utils/
-│       ├── config/
-│       ├── jobs/
-│       └── orchestrator/
-│
-└── README.md
-```
+## Project Architecture
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js >= 18
-- A Supabase project with the required schema applied
-
-### Backend
-
-```bash
-cd backend
-cp .env.example .env
-# Fill in your .env values
-npm install
-npm run dev
-```
-
-Backend starts on `http://localhost:3001`. Health check: `GET /api/health`
-
-### Frontend
-
-```bash
-cd frontend
-cp .env.example .env
-# Fill in your .env values
-npm install
-npm run dev
-```
-
-Frontend starts on `http://localhost:5173`.
-
-## Environment Variables
-
-See:
-- [`backend/.env.example`](backend/.env.example)
-- [`frontend/.env.example`](frontend/.env.example)
-
-> **Never** commit `.env` files or hardcode secrets.
-
-## Development Status
-
-Foundation initialized. Features are being built module by module.
-
-| Module            | Status      |
-|-------------------|-------------|
-| Project structure | ✅ Complete |
-| Backend server    | ✅ Complete |
-| Frontend scaffold | ✅ Complete |
-| Authentication    | 🔜 Next     |
-| Complaint intake  | 🔜 Planned  |
-| Agent pipeline    | 🔜 Planned  |
-| Dashboard UI      | 🔜 Planned  |
+```text
+Citizen
+   ↓
+CivicFix Web App
+   ↓
+Issue Submission + Photo + GPS
+   ↓
+AI / Gemini Processing
+   ↓
+Classification + Severity + Priority + Department
+   ↓
+Government Command Center
+   ↓
+Assignment → Resolution → Tracking
