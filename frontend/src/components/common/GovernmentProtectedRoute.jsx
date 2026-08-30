@@ -12,9 +12,10 @@ import { Loader2 } from 'lucide-react';
  * - If authenticated government_officer or department_admin: renders children.
  */
 export default function GovernmentProtectedRoute({ children }) {
-  const { isAuthenticated, isGovernmentUser, loading } = useAuth();
+  const { isAuthenticated, isGovernmentUser, loading, profileLoading, role } = useAuth();
 
-  if (loading) {
+  // If initial auth session is loading OR user profile/role is still resolving, show loading screen
+  if (loading || profileLoading || (isAuthenticated && role === null)) {
     return (
       <div
         id="gov-auth-loading-screen"

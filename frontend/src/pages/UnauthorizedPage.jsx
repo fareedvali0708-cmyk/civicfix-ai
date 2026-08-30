@@ -5,8 +5,9 @@ import { useAuth } from '../hooks/useAuth.js';
 import Logo from '../components/common/Logo.jsx';
 
 export default function UnauthorizedPage() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const email = user?.email || 'citizen account';
+  const displayRole = role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Citizen';
 
   return (
     <div className="min-h-screen bg-[hsl(222,25%,9%)] text-slate-100 flex flex-col justify-between p-6">
@@ -53,7 +54,7 @@ export default function UnauthorizedPage() {
             <span className="text-slate-400 text-[11px]">Current Session:</span>
             <p className="font-mono text-slate-200 truncate">{email}</p>
             <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-              Role: Citizen
+              Role: {displayRole}
             </span>
           </div>
 

@@ -65,7 +65,7 @@ export async function getSession() {
 }
 
 /**
- * Fetch profile record for the given user ID to obtain stored role.
+ * Fetch profile record for the given user ID (UUID) from public.profiles to obtain stored role.
  *
  * @param {string} userId
  * @returns {Promise<{ id: string, role: string, full_name?: string }|null>}
@@ -77,13 +77,15 @@ export async function fetchUserProfile(userId) {
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
-    if (!error && data) {
-      return data;
+    if (error) {
+      console.warn('[authService] Profile fetch notice:', error.message || error);
+      return null;
     }
+    return data;
   } catch (err) {
-    console.warn('[authService] Profile fetch notice:', err.message);
+    console.warn('[authService] Profile fetch exception:', err.message);
   }
   return null;
 }

@@ -6,7 +6,13 @@ import { useAuth } from '../hooks/useAuth.js';
 import Logo from '../components/common/Logo.jsx';
 
 export default function GovernmentLoginPage() {
-  const { isAuthenticated, isGovernmentUser, loading: authLoading, signInWithPassword } = useAuth();
+  const {
+    isAuthenticated,
+    isGovernmentUser,
+    loading: authLoading,
+    profileLoading,
+    signInWithPassword,
+  } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
@@ -17,10 +23,10 @@ export default function GovernmentLoginPage() {
 
   // If already authenticated with government role, redirect directly to command center
   useEffect(() => {
-    if (!authLoading && isAuthenticated && isGovernmentUser) {
+    if (!authLoading && !profileLoading && isAuthenticated && isGovernmentUser) {
       navigate('/government', { replace: true });
     }
-  }, [isAuthenticated, isGovernmentUser, authLoading, navigate]);
+  }, [isAuthenticated, isGovernmentUser, authLoading, profileLoading, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,17 +42,11 @@ export default function GovernmentLoginPage() {
       const result = await signInWithPassword(email.trim(), password);
       const userRole = result?.role;
 
-      if (
-        userRole === 'officer' ||
-        userRole === 'admin' ||
-        userRole === 'government_officer' ||
-        userRole === 'department_admin'
-      ) {
+      if (userRole === 'officer' || userRole === 'admin') {
         navigate('/government', { replace: true });
       } else if (userRole === 'citizen') {
         navigate('/unauthorized', { replace: true });
       } else {
-        // Fallback for government portal if role verified or default navigation
         navigate('/government', { replace: true });
       }
     } catch (err) {
