@@ -16,7 +16,6 @@ import supabase from '../lib/supabase.js';
  */
 export async function fetchUserIssues(userId, limit = 5) {
   try {
-    // Attempt standard citizen_id query first
     let query = supabase
       .from('issues')
       .select('*', { count: 'exact' })
@@ -24,13 +23,13 @@ export async function fetchUserIssues(userId, limit = 5) {
       .limit(limit);
 
     if (userId) {
-      query = query.eq('citizen_id', userId);
+      query = query.or(`citizen_id.eq.${userId},user_id.eq.${userId}`);
     }
 
     let { data, error, count } = await query;
 
-    // Fallback if citizen_id is named user_id or already filtered by RLS
-    if (error && error.message && error.message.includes('citizen_id')) {
+    // Fallback if OR query is rejected by specific database schema constraints
+    if (error) {
       const fallbackQuery = await supabase
         .from('issues')
         .select('*', { count: 'exact' })
@@ -58,12 +57,12 @@ export async function fetchUserIssueCounts(userId) {
   try {
     let query = supabase.from('issues').select('status');
     if (userId) {
-      query = query.eq('citizen_id', userId);
+      query = query.or(`citizen_id.eq.${userId},user_id.eq.${userId}`);
     }
 
     let { data, error } = await query;
 
-    if (error && error.message && error.message.includes('citizen_id')) {
+    if (error) {
       const fallback = await supabase.from('issues').select('status');
       data = fallback.data;
       error = fallback.error;

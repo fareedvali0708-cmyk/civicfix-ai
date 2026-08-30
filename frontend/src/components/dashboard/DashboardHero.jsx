@@ -1,15 +1,9 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowRight, FileText, Sparkles } from 'lucide-react';
+import { ArrowRight, FileText, Sparkles, Plus } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth.js';
 import { transitions, buttonHoverTap } from '../../lib/motionVariants.js';
 
-/**
- * DashboardHero
- *
- * Hero section with greeting, tagline, and primary CTA.
- * Uses motion tokens and refined SaaS typography.
- */
 export default function DashboardHero() {
   const { user } = useAuth();
 
@@ -20,51 +14,40 @@ export default function DashboardHero() {
     'there';
 
   return (
-    <section className="relative overflow-hidden pt-8 pb-6 sm:pt-12 sm:pb-8">
-      {/* Background ambient lighting */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{
-          background:
-            'radial-gradient(ellipse 65% 55% at 50% -10%, hsl(220 90% 56% / 0.12) 0%, transparent 70%)',
-        }}
-      />
-
+    <section className="relative overflow-hidden pt-6 pb-4 sm:pt-10 sm:pb-6">
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={transitions.easeSmooth}
-          className="max-w-2xl"
+          className="max-w-3xl"
         >
           {/* Welcome status pill */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-4 border border-[hsl(220_20%_22%)] bg-[hsl(220_20%_14%/0.7)] backdrop-blur-sm">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full mb-5 border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl shadow-lg shadow-black/20">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
             <span className="text-xs font-medium text-slate-300">
               Welcome back, <span className="text-white font-semibold">{firstName}</span>
             </span>
           </div>
 
-          {/* Headline */}
-          <h1
-            className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-white tracking-tight leading-[1.15] mb-4"
-            style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}
-          >
-            Turn everyday problems
-            <br />
-            <span className="bg-gradient-to-r from-blue-400 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
+          {/* Headline with luxury typography */}
+          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight leading-[1.1] mb-4">
+            Turn everyday problems{' '}
+            <span className="text-gradient-stitch">
               into action.
             </span>
           </h1>
 
           {/* Sub-copy */}
-          <p className="text-sm sm:text-base text-slate-400 mb-8 max-w-lg leading-relaxed">
-            Report civic issues, track real-time resolution progress, and keep your community safe and functional.
+          <p className="text-sm sm:text-base text-slate-400 mb-8 max-w-xl leading-relaxed font-normal">
+            Report civic issues with instant GPS imagery. Autonomous AI agents verify, prioritize, and route to local municipal teams in real time.
           </p>
 
           {/* CTAs */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3.5">
             <motion.div
               variants={buttonHoverTap}
               initial="rest"
@@ -75,19 +58,19 @@ export default function DashboardHero() {
                 id="report-issue-btn"
                 to="/report"
                 className="
-                  group relative inline-flex items-center gap-2.5 px-5 py-2.5 rounded-xl
+                  group relative inline-flex items-center gap-2.5 px-6 py-3 rounded-2xl
                   text-sm font-semibold text-white
-                  shadow-lg shadow-blue-500/20
+                  bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500
+                  hover:from-blue-500 hover:to-indigo-500
+                  shadow-xl shadow-blue-600/30 border border-blue-400/30
                   transition-all duration-200
                 "
-                style={{
-                  background: 'linear-gradient(135deg, hsl(220 90% 56%) 0%, hsl(224 85% 46%) 100%)',
-                }}
               >
+                <Plus size={16} className="text-blue-200" />
                 <span>Report an Issue</span>
                 <ArrowRight
                   size={15}
-                  className="transition-transform duration-200 group-hover:translate-x-0.5"
+                  className="transition-transform duration-200 group-hover:translate-x-1"
                 />
               </Link>
             </motion.div>
@@ -100,11 +83,11 @@ export default function DashboardHero() {
               whileHover="hover"
               whileTap="tap"
               className="
-                inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
+                inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-medium
                 text-slate-300 hover:text-white
-                bg-[hsl(220_20%_14%/0.7)] hover:bg-[hsl(220_20%_18%)]
-                border border-[hsl(220_20%_20%)] hover:border-[hsl(220_20%_26%)]
-                transition-colors duration-150
+                bg-white/[0.04] hover:bg-white/[0.08]
+                border border-white/[0.08] hover:border-white/[0.18]
+                backdrop-blur-md transition-all duration-150
               "
             >
               <FileText size={15} className="text-slate-400" />
