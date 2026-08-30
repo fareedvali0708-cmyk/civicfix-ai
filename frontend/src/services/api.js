@@ -4,13 +4,10 @@ import supabase from '../lib/supabase.js';
 /**
  * Pre-configured Axios instance for all backend API requests.
  * In development, Vite's proxy forwards /api/* to http://localhost:3001.
- * In production, set VITE_API_BASE_URL to the deployed backend URL.
+ * In production, uses VITE_API_URL configured in the deployment environment.
  */
 function getApiBaseUrl() {
-  const raw =
-    import.meta.env.VITE_API_BASE_URL ||
-    import.meta.env.VITE_API_URL ||
-    '/api';
+  const raw = import.meta.env.VITE_API_URL || '/api';
   const clean = String(raw).trim().replace(/\/+$/, '');
   if (clean.startsWith('http') && !clean.endsWith('/api')) {
     return `${clean}/api`;
@@ -30,10 +27,14 @@ const api = axios.create({
 // Attach the Supabase session JWT as a Bearer token when a session exists
 api.interceptors.request.use(
   async (config) => {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (err) {
+      console.warn('[api] Failed to retrieve session token:', err.message);
     }
     return config;
   },

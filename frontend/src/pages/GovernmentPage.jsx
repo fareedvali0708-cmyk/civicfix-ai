@@ -43,16 +43,25 @@ export default function GovernmentPage() {
     setError(null);
     try {
       const res = await fetchGovernmentOverview();
-      if (res.success) {
+      if (res && res.success) {
         setData({
-          stats: res.stats,
-          issues: res.issues || [],
-          departments: res.departments || [],
-          officers: res.officers || [],
-          escalations: res.escalations || [],
-          recentLogs: res.recentLogs || [],
+          stats: res.stats || {
+            totalIssues: 0,
+            activeIssues: 0,
+            criticalIssues: 0,
+            slaRiskIssues: 0,
+            resolvedIssues: 0,
+            totalEscalations: 0,
+          },
+          issues: Array.isArray(res.issues) ? res.issues : [],
+          departments: Array.isArray(res.departments) ? res.departments : [],
+          officers: Array.isArray(res.officers) ? res.officers : [],
+          escalations: Array.isArray(res.escalations) ? res.escalations : [],
+          recentLogs: Array.isArray(res.recentLogs) ? res.recentLogs : [],
         });
         setLastUpdated(Date.now());
+      } else {
+        throw new Error(res?.error || 'Failed to load government overview.');
       }
     } catch (err) {
       console.error('[GovernmentPage] Failed to fetch data:', err.message);
